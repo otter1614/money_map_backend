@@ -7,6 +7,8 @@ const expenseRoutes = require('./routes/expense.routes');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./swagger');
 const summaryRoutes = require('./routes/summary.routes');
+const recurringRoutes = require('./routes/recurring.routes');
+const statsRoutes = require('./routes/stats.routes');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -34,6 +36,12 @@ app.get('/api-docs.json', (req, res) => res.json(swaggerSpec));
 
 // 요약(잔액) 관련 라우트
 app.use('/api/summary', summaryRoutes);
+
+// 반복 수입 관련 라우트
+app.use('/api/recurring', recurringRoutes);
+
+// 통계 관련 라우트
+app.use('/api/stats', statsRoutes);
 
 // 서버 시작
 app.listen(port, () => {

@@ -2,8 +2,16 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs').promises;
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 
-// 데이터 파일 경로
+let db = null;
+try {
+    db = require('../db');
+} catch (e) {
+    db = null;
+}
+
+// 데이터 파일 경로 (fallback)
 const dataPath = path.join(__dirname, '../data/income.json');
 
 /**
@@ -18,6 +26,20 @@ const dataPath = path.join(__dirname, '../data/income.json');
 // 모든 수입 데이터 조회
 router.get('/', async (req, res) => {
     try {
+        const { startDate, endDate, category } = req.query;
+        if (db) {
+            let sql = 'SELECT * FROM incomes';
+            const where = [];
+            const params = [];
+            if (startDate) { where.push('date >= ?'); params.push(startDate); }
+            if (endDate) { where.push('date <= ?'); params.push(endDate); }
+            if (category) { where.push('category = ?'); params.push(category); }
+            if (where.length) sql += ' WHERE ' + where.join(' AND ');
+            sql += ' ORDER BY date DESC';
+            const rows = db.prepare(sql).all(...params);
+            return res.json(rows);
+        }
+
         const data = await readIncomeData();
         res.json(data);
     } catch (error) {
@@ -59,13 +81,22 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ message: '금액, 카테고리, 날짜는 필수 입력값입니다.' });
         }
 
+        const id = uuidv4();
+        const createdAt = new Date().toISOString();
+
+        if (db) {
+            const stmt = db.prepare('INSERT INTO incomes (id, amount, category, description, date, createdAt) VALUES (?,?,?,?,?,?)');
+            stmt.run(id, Number(amount), category, description || '', date, createdAt);
+            return res.status(201).json({ id, amount: Number(amount), category, description: description || '', date, createdAt });
+        }
+
         const newIncome = {
             id: Date.now().toString(), // 간단한 유니크 ID 생성
             amount: Number(amount),
             category,
             description: description || '',
             date,
-            createdAt: new Date().toISOString()
+            createdAt
         };
 
         const data = await readIncomeData();
@@ -98,6 +129,12 @@ router.post('/', async (req, res) => {
 // 특정 수입 데이터 조회
 router.get('/:id', async (req, res) => {
     try {
+        if (db) {
+            const row = db.prepare('SELECT * FROM incomes WHERE id = ?').get(req.params.id);
+            if (!row) return res.status(404).json({ message: '해당 수입 데이터를 찾을 수 없습니다.' });
+            return res.json(row);
+        }
+
         const data = await readIncomeData();
         const income = data.find(item => item.id === req.params.id);
         
@@ -108,6 +145,102 @@ router.get('/:id', async (req, res) => {
         res.json(income);
     } catch (error) {
         res.status(500).json({ message: '데이터를 불러오는데 실패했습니다.', error: error.message });
+    }
+});
+
+// 수정
+router.put('/:id', async (req, res) => {
+    try {
+        const { amount, category, description, date } = req.body;
+        if (db) {
+            const existing = db.prepare('SELECT * FROM incomes WHERE id = ?').get(req.params.id);
+            if (!existing) return res.status(404).json({ message: '해당 수입 데이터를 찾을 수 없습니다.' });
+            const updatedAt = new Date().toISOString();
+            db.prepare(`UPDATE incomes SET amount = ?, category = ?, description = ?, date = ?, createdAt = ? WHERE id = ?`).run(
+                Number(amount) || existing.amount,
+                category || existing.category,
+                description || existing.description,
+                date || existing.date,
+                updatedAt,
+                req.params.id
+            );
+            const row = db.prepare('SELECT * FROM incomes WHERE id = ?').get(req.params.id);
+            return res.json(row);
+        }
+
+        const data = await readIncomeData();
+        const idx = data.findIndex(i => i.id === req.params.id);
+        if (idx === -1) return res.status(404).json({ message: '해당 수입 데이터를 찾을 수 없습니다.' });
+        data[idx] = { ...data[idx], amount: Number(amount) || data[idx].amount, category: category || data[idx].category, description: description || data[idx].description, date: date || data[idx].date, updatedAt: new Date().toISOString() };
+        await saveIncomeData(data);
+        res.json(data[idx]);
+    } catch (error) {
+        res.status(500).json({ message: '데이터 수정에 실패했습니다.', error: error.message });
+    }
+});
+
+// 삭제
+router.delete('/:id', async (req, res) => {
+    try {
+        if (db) {
+            const info = db.prepare('DELETE FROM incomes WHERE id = ?').run(req.params.id);
+            if (info.changes === 0) return res.status(404).json({ message: '해당 수입 데이터를 찾을 수 없습니다.' });
+            return res.json({ message: '삭제되었습니다.' });
+        }
+
+        const data = await readIncomeData();
+        const filtered = data.filter(i => i.id !== req.params.id);
+        if (filtered.length === data.length) return res.status(404).json({ message: '해당 수입 데이터를 찾을 수 없습니다.' });
+        await saveIncomeData(filtered);
+        res.json({ message: '삭제되었습니다.' });
+    } catch (error) {
+        res.status(500).json({ message: '데이터 삭제에 실패했습니다.', error: error.message });
+    }
+});
+
+// CSV import (simple)
+router.post('/import-csv', async (req, res) => {
+    try {
+        const { csv, persist } = req.body; // csv string
+        if (!csv) return res.status(400).json({ message: 'CSV 내용 필요' });
+        const lines = csv.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const header = lines.shift().split(',').map(h => h.trim().toLowerCase());
+        const rows = lines.map(line => {
+            const cols = line.split(',');
+            const obj = {};
+            header.forEach((h, i) => obj[h] = cols[i]);
+            return obj;
+        });
+
+        const items = rows.map(r => ({ amount: Number(r.amount || r.value || 0), category: r.category || r.source || '기타', description: r.description || r.memo || '', date: (r.date || new Date().toISOString()).slice(0,10) }));
+
+        if (db && persist) {
+            const insert = db.prepare('INSERT INTO incomes (id, amount, category, description, date, createdAt) VALUES (?,?,?,?,?,?)');
+            const now = new Date().toISOString();
+            const insertMany = db.transaction((arr) => {
+                for (const it of arr) insert.run(uuidv4(), Number(it.amount), it.category, it.description, it.date, now);
+            });
+            insertMany(items);
+        }
+
+        res.json({ imported: items.length, items });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// CSV export
+router.get('/export-csv', async (req, res) => {
+    try {
+        let rows = [];
+        if (db) rows = db.prepare('SELECT * FROM incomes ORDER BY date DESC').all();
+        else rows = await readIncomeData();
+        const header = ['id','amount','category','description','date','createdAt'];
+        const csv = [header.join(',')].concat(rows.map(r => header.map(h => JSON.stringify(r[h] || '')).join(','))).join('\n');
+        res.setHeader('Content-Type','text/csv');
+        res.send(csv);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
     }
 });
 

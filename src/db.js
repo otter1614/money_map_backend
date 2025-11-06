@@ -33,4 +33,20 @@ db.prepare(`
   )
 `).run();
 
+// 반복 수입 규칙 테이블 (recurring incomes)
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS recurring_incomes (
+    id TEXT PRIMARY KEY,
+    amount REAL NOT NULL,
+    category TEXT NOT NULL,
+    description TEXT,
+    startDate TEXT NOT NULL,
+    frequency TEXT NOT NULL, -- e.g., daily, weekly, monthly, yearly
+    interval INTEGER DEFAULT 1, -- e.g., every 1 month
+    occurrences INTEGER, -- optional number of times
+    endDate TEXT, -- optional end date
+    createdAt TEXT NOT NULL
+  )
+`).run();
+
 module.exports = db;
