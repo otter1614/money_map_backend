@@ -9,7 +9,28 @@ function monthKey(dateStr) {
   return dateStr.slice(0,7);
 }
 
-// 월별 집계
+/**
+ * @openapi
+ * /api/stats/monthly:
+ *   get:
+ *     summary: 월별 수입 통계 조회
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 시작 날짜 (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 종료 날짜 (YYYY-MM-DD)
+ *     responses:
+ *       200:
+ *         description: 월별 수입 총액 반환
+ */
 router.get('/monthly', (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -30,7 +51,28 @@ router.get('/monthly', (req, res) => {
   }
 });
 
-// 카테고리별 집계
+/**
+ * @openapi
+ * /api/stats/category:
+ *   get:
+ *     summary: 카테고리별 수입 통계 조회
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 시작 날짜 (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 종료 날짜 (YYYY-MM-DD)
+ *     responses:
+ *       200:
+ *         description: 카테고리별 수입 총액 반환
+ */
 router.get('/category', (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -51,7 +93,28 @@ router.get('/category', (req, res) => {
   }
 });
 
-// 요일별 분포 (0=Sun..6=Sat)
+/**
+ * @openapi
+ * /api/stats/weekday:
+ *   get:
+ *     summary: 요일별 수입 통계 조회
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 시작 날짜 (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 종료 날짜 (YYYY-MM-DD)
+ *     responses:
+ *       200:
+ *         description: 요일별 수입 총액 반환 (0=일요일..6=토요일)
+ */
 router.get('/weekday', (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -72,7 +135,45 @@ router.get('/weekday', (req, res) => {
   }
 });
 
-// 요약: 평균, 증감률(전월 대비) 등
+/**
+ * @openapi
+ * /api/stats/summary:
+ *   get:
+ *     summary: 수입 요약 통계 조회
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 시작 날짜 (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 종료 날짜 (YYYY-MM-DD)
+ *     responses:
+ *       200:
+ *         description: 총액, 일평균, 이전 기간 대비 증감률 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 total:
+ *                   type: number
+ *                   description: 기간 내 총 수입
+ *                 avg:
+ *                   type: number
+ *                   description: 일 평균 수입
+ *                 prevTotal:
+ *                   type: number
+ *                   description: 이전 기간 총 수입
+ *                 change:
+ *                   type: number
+ *                   description: 이전 기간 대비 증감률 (%)
+ */
 router.get('/summary', (req, res) => {
   try {
     const { startDate, endDate } = req.query;

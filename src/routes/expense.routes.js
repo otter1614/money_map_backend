@@ -39,18 +39,50 @@ router.get('/', async (req, res) => {
  *             properties:
  *               amount:
  *                 type: number
- *               category:
- *                 type: string
+ *                 description: 지출 금액
  *               description:
  *                 type: string
+ *                 description: 지출 설명
  *               date:
  *                 type: string
+ *                 description: 지출 날짜 (YYYY-MM-DD)
  *               paymentMethod:
  *                 type: string
+ *                 description: 결제 수단
  *               location:
  *                 type: string
- *               isFixed:
- *                 type: boolean
+ *                 description: 지출 장소
+ *               categories:
+ *                 type: object
+ *                 description: 지출 카테고리 정보
+ *                 properties:
+ *                   isFixed:
+ *                     type: boolean
+ *                     description: 고정 지출 여부
+ *                   isCoffee:
+ *                     type: boolean
+ *                     description: 커피/음료 지출
+ *                   isRent:
+ *                     type: boolean
+ *                     description: 월세
+ *                   isFood:
+ *                     type: boolean
+ *                     description: 식비
+ *                   isSavings:
+ *                     type: boolean
+ *                     description: 저축/적금
+ *                   isTransportation:
+ *                     type: boolean
+ *                     description: 교통비
+ *                   isUtility:
+ *                     type: boolean
+ *                     description: 공과금
+ *                   isEntertainment:
+ *                     type: boolean
+ *                     description: 문화/여가
+ *                   isShopping:
+ *                     type: boolean
+ *                     description: 쇼핑
  *     responses:
  *       201:
  *         description: 생성된 지출 객체 반환
@@ -58,25 +90,60 @@ router.get('/', async (req, res) => {
 // 새로운 지출 데이터 추가
 router.post('/', async (req, res) => {
     try {
-        const { amount, category, description, date, paymentMethod, location, isFixed } = req.body;
+        const { 
+            amount, 
+            description, 
+            date, 
+            paymentMethod, 
+            location,
+            categories
+        } = req.body;
         
         // 입력 데이터 검증
-        if (!amount || !category || !date) {
-            return res.status(400).json({ message: '금액, 카테고리, 날짜는 필수 입력값입니다.' });
+        if (!amount || !date) {
+            return res.status(400).json({ message: '금액과 날짜는 필수 입력값입니다.' });
         }
 
-        // isFixed는 명시적으로 제공되지 않으면 false로 처리
-        const parsedIsFixed = parseBoolean(isFixed);
+        // 카테고리 객체 처리
+        const defaultCategories = {
+            isFixed: false,
+            isCoffee: false,
+            isRent: false,
+            isFood: false,
+            isSavings: false,
+            isTransportation: false,
+            isUtility: false,
+            isEntertainment: false,
+            isShopping: false
+        };
+
+        const expenseTypes = {
+            ...defaultCategories,
+            ...(categories && Object.fromEntries(
+                Object.entries(categories).map(([key, value]) => [key, parseBoolean(value)])
+            ))
+        };
+
+        // 자동으로 카테고리 결정
+        let derivedCategory = '기타';
+        if (expenseTypes.isCoffee) derivedCategory = '커피/음료';
+        else if (expenseTypes.isRent) derivedCategory = '월세';
+        else if (expenseTypes.isFood) derivedCategory = '식비';
+        else if (expenseTypes.isSavings) derivedCategory = '저축/적금';
+        else if (expenseTypes.isTransportation) derivedCategory = '교통비';
+        else if (expenseTypes.isUtility) derivedCategory = '공과금';
+        else if (expenseTypes.isEntertainment) derivedCategory = '문화/여가';
+        else if (expenseTypes.isShopping) derivedCategory = '쇼핑';
 
         const newExpense = {
             id: Date.now().toString(), // 간단한 유니크 ID 생성
             amount: Number(amount),
-            category,
+            category: category || derivedCategory,
             description: description || '',
             date,
-            paymentMethod: paymentMethod || '현금', // 결제 수단 (현금, 카드 등)
-            location: location || '', // 지출 장소
-            isFixed: parsedIsFixed,
+            paymentMethod: paymentMethod || '현금',
+            location: location || '',
+            ...expenseTypes,
             createdAt: new Date().toISOString()
         };
 
@@ -161,7 +228,7 @@ router.get('/:id', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
     try {
-        const { amount, category, description, date, paymentMethod, location, isFixed } = req.body;
+        const { amount, description, date, paymentMethod, location, categories } = req.body;
         const data = await readExpenseData();
         const index = data.findIndex(item => item.id === req.params.id);
 
@@ -174,7 +241,6 @@ router.put('/:id', async (req, res) => {
         const updated = {
             ...existing,
             amount: (amount !== undefined && amount !== null) ? Number(amount) : existing.amount,
-            category: category || existing.category,
             description: description || existing.description,
             date: date || existing.date,
             paymentMethod: paymentMethod || existing.paymentMethod,
@@ -182,11 +248,39 @@ router.put('/:id', async (req, res) => {
             updatedAt: new Date().toISOString()
         };
 
-        // isFixed는 클라이언트가 보낸 경우에만 변경, 아니면 기존값 유지
-        if (req.body.hasOwnProperty('isFixed')) {
-            updated.isFixed = parseBoolean(isFixed);
+        // 카테고리 객체 업데이트
+        if (categories) {
+            const existingCategories = {
+                isFixed: existing.isFixed || false,
+                isCoffee: existing.isCoffee || false,
+                isRent: existing.isRent || false,
+                isFood: existing.isFood || false,
+                isSavings: existing.isSavings || false,
+                isTransportation: existing.isTransportation || false,
+                isUtility: existing.isUtility || false,
+                isEntertainment: existing.isEntertainment || false,
+                isShopping: existing.isShopping || false
+            };
+
+            Object.entries(categories).forEach(([key, value]) => {
+                if (existingCategories.hasOwnProperty(key)) {
+                    updated[key] = parseBoolean(value);
+                }
+            });
         }
 
+        // 카테고리 자동 업데이트
+        let derivedCategory = '기타';
+        if (updated.isCoffee) derivedCategory = '커피/음료';
+        else if (updated.isRent) derivedCategory = '월세';
+        else if (updated.isFood) derivedCategory = '식비';
+        else if (updated.isSavings) derivedCategory = '저축/적금';
+        else if (updated.isTransportation) derivedCategory = '교통비';
+        else if (updated.isUtility) derivedCategory = '공과금';
+        else if (updated.isEntertainment) derivedCategory = '문화/여가';
+        else if (updated.isShopping) derivedCategory = '쇼핑';
+
+        updated.category = category || derivedCategory;
         data[index] = updated;
 
         await saveExpenseData(data);
